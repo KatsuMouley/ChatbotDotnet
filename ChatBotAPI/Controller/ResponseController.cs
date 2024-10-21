@@ -8,7 +8,7 @@ using System.Net.Http.Headers; // Para configurar cabeçalhos HTTP
 using Newtonsoft.Json; // Para serialização JSON
 using System.Text; // Para codificação UTF-8
 
-namespace ChatBot.Controllers
+namespace ChatBot.Controller
 {
     [ApiController]
     [Route("api/[controller]")]
