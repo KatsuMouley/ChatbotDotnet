@@ -1,0 +1,285 @@
+// Importa os namespaces necessários
+using Microsoft.AspNetCore.Mvc;       // Para manipulação de rotas e respostas HTTP
+using System.Threading.Tasks;         // Para métodos assíncronos (async/await)
+using ChatBot.Data;                // Para acessar o contexto do banco de dados (ChatBotContext)
+using ChatBot.Models;              // Para usar os modelos (Response, Variant, etc.)
+using Microsoft.EntityFrameworkCore;  // Para operações com o banco de dados (SQLite)
+using System.Linq;                  // Para operações de consulta LINQ
+using Microsoft.AspNetCore.Authorization; // Para manipulação de autenticação e autorização
+
+// Define o namespace para o controlador
+namespace ChatBot.Controllers
+{
+    // Indica que este controlador é um API Controller
+    [ApiController]
+    // Define a rota base para as ações deste controlador
+    [Route("api/[controller]")]
+    public class ResponseController : ControllerBase
+    {
+        // Define um campo privado para o contexto do banco de dados
+        private readonly ChatBotContext _context;
+
+        // Construtor que recebe o contexto do banco de dados através da injeção de dependência
+        public ResponseController(ChatBotContext context)
+        {
+            _context = context; // Inicializa o contexto
+        }
+
+        // Método para obter uma resposta com base na palavra-chave e variante
+        [HttpGet("{keyword}/{variant}")]
+        public async Task<IActionResult> GetResponse(string keyword, string variant)
+        {
+            // Busca a primeira resposta que corresponda à palavra-chave, variante e esteja aprovada
+            var response = await _context.Responses
+                .FirstOrDefaultAsync(r => r.Keyword == keyword && r.Variant == variant && r.IsApproved);
+            
+            // Retorna a resposta se encontrada, senão retorna NotFound
+            if (response != null)
+                return Ok(response); // Retorna status 200 (OK) com a resposta
+            else
+                return NotFound("Resposta não encontrada."); // Retorna status 404 (Not Found)
+        }
+
+        // Método para aprovar uma resposta, acessível apenas para administradores
+        [HttpPut("{id}")]
+        [Authorize(Roles = "admin")] // Apenas usuários com a role 'admin' podem acessar
+        public async Task<IActionResult> ApproveResponse(int id)
+        {
+            // Busca a resposta pelo ID
+            var response = await _context.Responses.FindAsync(id);
+            if (response == null)
+                return NotFound("Resposta não encontrada."); // Retorna 404 se não encontrar
+
+            response.IsApproved = true; // Marca a resposta como aprovada
+            await _context.SaveChangesAsync(); // Salva as mudanças no banco de dados
+            return Ok("Resposta aprovada."); // Retorna 200 (OK) com mensagem de sucesso
+        }
+
+        // Método para ensinar uma nova resposta
+        [HttpPost("teach")]
+        public async Task<IActionResult> Teach([FromBody] Response newResponse)
+        {
+            newResponse.IsApproved = false; // A nova resposta precisa de aprovação do admin
+            await _context.Responses.AddAsync(newResponse); // Adiciona a nova resposta ao contexto
+            await _context.SaveChangesAsync(); // Salva as mudanças no banco de dados
+            return Ok("Nova resposta aguardando aprovação."); // Retorna 200 (OK) com mensagem de sucesso
+        }
+
+        // Método para processar uma mensagem de chat
+        [HttpPost("chat")]
+        public async Task<IActionResult> Chat([FromBody] Response userMessage)
+        {
+            // Verifica se a mensagem é nula ou se a Keyword está vazia
+            if (userMessage == null || string.IsNullOrEmpty(userMessage.Keyword))
+            {
+                return BadRequest("Mensagem inválida."); // Retorna 400 (Bad Request) se inválido
+            }
+
+            // Busca a resposta correspondente no banco de dados
+            var response = await _context.Responses
+                .FirstOrDefaultAsync(r => r.Keyword == userMessage.Keyword && r.Variant == userMessage.Variant && r.IsApproved);
+            // Se uma resposta for encontrada, retorna seu texto
+            if (response != null)
+            {
+                return Ok(new { text = response.Text }); // Retorna 200 (OK) com o texto da resposta
+            }
+
+            // Se não encontrar resposta, retorna NotFound
+            return NotFound(new { text = "Desculpe, não entendi sua mensagem." }); // Retorna 404 com mensagem de erro
+        }
+    
+    }
+}
+// código não utilizado
+
+
+// using Microsoft.AspNetCore.Mvc;
+// using System.Net.Http;
+// using System.Text;
+// using System.Threading.Tasks;
+// using Newtonsoft.Json;
+
+// [ApiController]
+// [Route("api/[controller]")]
+// public class ResponseController : ControllerBase
+// {
+//     private readonly HttpClient _httpClient;
+
+//     public ResponseController(HttpClient httpClient)
+//     {
+//         _httpClient = httpClient;
+//     }
+
+//     // Método para processar a mensagem e buscar a resposta na API externa
+//     [HttpPost("chat")]
+//     public async Task<IActionResult> Chat([FromBody] string userMessage)
+//     {
+//         if (string.IsNullOrEmpty(userMessage))
+//         {
+//             return BadRequest("Mensagem inválida.");
+//         }
+
+//         var apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=AIzaSyC4-rKr8h3Ce9G0l2oto32PXFjypcghgRk";
+
+//         var requestData = new
+//         {
+//             contents = new[]
+//             {
+//                 new { parts = new[] { new { text = userMessage } } }
+//             }
+//         };
+
+//         var requestBody = new StringContent(JsonConvert.SerializeObject(requestData), Encoding.UTF8, "application/json");
+
+//         var response = await _httpClient.PostAsync(apiUrl, requestBody);
+//         var responseBody = await response.Content.ReadAsStringAsync();
+
+//         return Ok(responseBody);
+//     }
+// }
+
+// }
+
+// using Microsoft.AspNetCore.Mvc;
+// using System.Net.Http;
+// using System.Text;
+// using System.Threading.Tasks;
+// using Newtonsoft.Json;
+// using Microsoft.EntityFrameworkCore;
+// using ChatBot.Data;
+
+// [ApiController]
+// [Route("api/[controller]")]
+// public class ResponseController : ControllerBase
+// {
+//     private readonly ChatBotContext _context;
+//     private readonly HttpClient _httpClient;
+
+//     public ResponseController(ChatBotContext context, HttpClient httpClient)
+//     {
+//         _context = context;
+//         _httpClient = httpClient;
+//     }
+
+//     [HttpPost("chat")]
+//     public async Task<IActionResult> Chat([FromBody] string userMessage)
+//     {
+//         if (string.IsNullOrEmpty(userMessage))
+//         {
+//             return BadRequest("Mensagem inválida.");
+//         }
+
+//         // 1. Verificar no banco de dados se existe uma resposta para a mensagem do usuário
+//         var response = await _context.Responses
+//             .FirstOrDefaultAsync(r => r.Keyword == userMessage && r.IsApproved);
+
+//         if (response != null)
+//         {
+//             return Ok(new { text = response.Text });
+//         }
+
+//         // 2. Se não encontrar no banco de dados, enviar a mensagem para a API externa
+//         var apiUrl = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=AIzaSyC4-rKr8h3Ce9G0l2oto32PXFjypcghgRk";
+
+//         var requestData = new
+//         {
+//             contents = new[]
+//             {
+//                 new { parts = new[] { new { text = userMessage } } }
+//             }
+//         };
+
+//         var requestBody = new StringContent(JsonConvert.SerializeObject(requestData), Encoding.UTF8, "application/json");
+
+//         var apiResponse = await _httpClient.PostAsync(apiUrl, requestBody);
+//         var apiResponseBody = await apiResponse.Content.ReadAsStringAsync();
+
+//         return Ok(apiResponseBody);
+//     }
+// }
+
+
+// [ApiController]
+// [Route("api/[controller]")]
+// public class ResponseController : ControllerBase
+// {
+//     private readonly ChatBotContext _context;
+//     private readonly HttpClient _httpClient;
+
+//     public ResponseController(ChatBotContext context, HttpClient httpClient)
+//     {
+//         _context = context;
+//         _httpClient = httpClient;
+//     }
+
+//     [HttpPost("chat")]
+//     public async Task<IActionResult> Chat([FromBody] string userMessage)
+//     {
+//         // if (string.IsNullOrEmpty(userMessage))
+//         // {
+//         //     return BadRequest("Mensagem inválida.");
+//         // }
+
+//         // // 1. Verificar no banco de dados se existe uma resposta para a mensagem do usuário
+//         // var response = await _context.Responses
+//         //     .FirstOrDefaultAsync(r => r.Keyword == userMessage && r.IsApproved);
+
+//         // if (response != null)
+//         // {
+//         //     return Ok(new { text = response.Text });
+//         // }
+
+//         // // 2. Se não encontrar no banco de dados, enviar a mensagem para a API externa
+
+//         class Program
+// {
+//     private static readonly HttpClient client = new HttpClient();
+
+//     static async Task Main(string[] args)
+//     {
+//         var apiKey = "YOUR_OPENAI_API_KEY"; // Substitua pelo seu token da API
+//         var requestBody = new
+//         {
+//             model = "gpt-4o-mini",
+//             messages = new object[] { },
+//             temperature = 1,
+//             max_tokens = 2048,
+//             top_p = 1,
+//             frequency_penalty = 0,
+//             presence_penalty = 0,
+//             response_format = new { type = "text" }
+//         };
+
+//         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+//         client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+//         var json = System.Text.Json.JsonSerializer.Serialize(requestBody);
+//         var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+//         var response = await client.PostAsync("https://api.openai.com/v1/chat/completions", content);
+
+//         if (response.IsSuccessStatusCode)
+//         {
+//             var responseData = await response.Content.ReadAsStringAsync();
+//             Console.WriteLine(responseData);
+//         }
+//         var apiUrl =;
+
+//         var requestData = new
+//         {
+//             contents = new[]
+//             {
+//                 new { parts = new[] { new { text = userMessage } } }
+//             }
+//         };
+
+//         var requestBody = new StringContent(JsonConvert.SerializeObject(requestData), Encoding.UTF8, "application/json");
+
+//         var apiResponse = await _httpClient.PostAsync(apiUrl, requestBody);
+//         var apiResponseBody = await apiResponse.Content.ReadAsStringAsync();
+
+//         return Ok(apiResponseBody);
+//     }
+// }
+
+// }

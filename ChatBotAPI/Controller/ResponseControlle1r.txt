@@ -1,0 +1,38 @@
+using Microsoft.AspNetCore.Mvc;       // Para manipulação de rotas e respostas HTTP
+using System.Threading.Tasks;         // Para métodos assíncronos (async/await)
+using ChatBotAPI.Data;                // Para acessar o contexto do banco de dados (ChatBotContext)
+using ChatBotAPI.Models;              // Para usar os modelos (Response, Variant, etc.)
+using Microsoft.EntityFrameworkCore;  // Para operações com o banco de dados (SQLite)
+using System.Linq;                    // Para manipulação de consultas LINQ
+
+
+[ApiController]
+[Route("api/[controller]")]
+public class ResponseController : ControllerBase
+{
+    private readonly ChatBotContext _context;
+
+    public ResponseController(ChatBotContext context)
+    {
+        _context = context;
+    }
+
+    [HttpGet("{keyword}/{variant}")]
+    public IActionResult GetResponse(string keyword, string variant)
+    {
+        var response = _context.Responses.FirstOrDefault(r => r.Keyword == keyword && r.Variant == variant && r.IsApproved);
+        if (response != null)
+            return Ok(response);
+        else
+            return NotFound("Resposta não encontrada.");
+    }
+
+    [HttpPost("/teach")]
+    public IActionResult Teach([FromBody] Response newResponse)
+    {
+        newResponse.IsApproved = false; // Admin must approve it
+        _context.Responses.Add(newResponse);
+        _context.SaveChanges();
+        return Ok("Nova resposta aguardando aprovação.");
+    }
+}
