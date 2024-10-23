@@ -56,6 +56,7 @@
 /* Estilo para imagens */
 .message img {
   max-width: 100%; /* A imagem não pode ultrapassar a largura do container */
+  max-height: 300px; /* Limite de altura para evitar que imagens grandes ultrapassem */
   height: auto; /* Mantém a proporção da imagem */
   border-radius: 10px; /* Bordas arredondadas para a imagem */
 }

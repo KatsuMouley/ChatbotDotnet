@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 
 namespace ChatBot.Controllers
@@ -8,26 +8,46 @@ namespace ChatBot.Controllers
     [Route("api/[controller]")]
     public class ResponseController : ControllerBase
     {
-        // Other existing code...
+        private readonly HttpClient _httpClient;
 
-        // Endpoint to return an image
-        [HttpGet("image/{imageName}")]
-        public async Task<IActionResult> GetImage(string imageName)
+        // Apenas este construtor deve existir.
+        public ResponseController(HttpClient httpClient)
         {
-            // Define the path to your image directory
-            var imagePath = Path.Combine("Path/To/Your/Images", imageName);
+            _httpClient = httpClient;
+        }
 
-            // Check if the file exists
-            if (!System.IO.File.Exists(imagePath))
+        // Endpoint para gerar a imagem com base no input do usuário
+        [HttpGet("generate-image")]
+        public async Task<IActionResult> GenerateImage([FromQuery] string prompt)
+        {
+            if (string.IsNullOrWhiteSpace(prompt))
             {
-                return NotFound("Image not found.");
+                return BadRequest("Prompt is required.");
             }
 
-            // Read the image file
-            var imageFile = await System.IO.File.ReadAllBytesAsync(imagePath);
+            // URL da API externa
+            var apiUrl = $"https://image.pollinations.ai/prompt/{prompt}";
 
-            // Return the image as a FileResult
-            return File(imageFile, "image/jpeg"); // Change the content type if your image is not JPEG
+            try
+            {
+                // Faz a requisição à API externa para gerar a imagem
+                var response = await _httpClient.GetAsync(apiUrl);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    return StatusCode((int)response.StatusCode, "Error retrieving the image.");
+                }
+
+                // Lê a imagem como array de bytes
+                var imageBytes = await response.Content.ReadAsByteArrayAsync();
+
+                // Retorna a imagem como FileResult
+                return File(imageBytes, "image/jpeg"); // ou "image/png" dependendo do formato
+            }
+            catch (HttpRequestException e)
+            {
+                return StatusCode(500, $"Error while calling the external service: {e.Message}");
+            }
         }
     }
 }

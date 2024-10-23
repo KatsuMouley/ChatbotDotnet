@@ -18,100 +18,63 @@ function App() {
       const userMessage = { text: inputMessage, sender: userType };
       setMessages(prev => [...prev, userMessage]);
 
+      // Verifica se o comando é "/toggle"
       if (inputMessage.startsWith('/toggle')) {
         setUserType(prevType => (prevType === 'user' ? 'admin' : 'user'));
         setInputMessage('');
         return;
-      } else if (inputMessage.startsWith('/teach')) {
-        const teachingText = inputMessage.slice(7).trim();
-        fetch('http://localhost:5228/api/Response/teach', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ Keyword: teachingText, Text: 'Nova resposta', Variant: 'default' }),
-        })
-        .then(response => response.json())
-        .then(() => {
-          const botMessage = { text: 'Nova resposta adicionada para aprovação.', sender: 'bot' };
-          setMessages(prev => [...prev, botMessage]);
-        })
-        .catch(error => console.error('Erro:', error));
-        setInputMessage('');
-        return;
-      } else if (inputMessage.startsWith('/report')) {
-        const messageId = inputMessage.slice(8).trim();
-        fetch('http://localhost:5228/api/Response/report', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ MessageId: messageId }),
-        })
-        .then(() => {
-          const botMessage = { text: 'Mensagem reportada.', sender: 'bot' };
-          setMessages(prev => [...prev, botMessage]);
-        })
-        .catch(error => console.error('Erro:', error));
-        setInputMessage('');
-        return;
-      } else if (inputMessage.startsWith('/add variant')) {
-        const variantText = inputMessage.slice(12).trim();
-        fetch('http://localhost:5228/api/Response/addVariant', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ Variant: variantText }),
-        })
-        .then(() => {
-          const botMessage = { text: `Variante "${variantText}" adicionada.`, sender: 'bot' };
-          setMessages(prev => [...prev, botMessage]);
-        })
-        .catch(error => console.error('Erro:', error));
-        setInputMessage('');
-        return;
-      } else if (inputMessage.startsWith('/image')) {
-        const imageName = inputMessage.slice(7).trim(); // Get the image name
-        fetch(`http://localhost:5228/api/Response/image/${imageName}`, { // Adjusted URL
-            method: 'GET', // Changed to GET, assuming your endpoint uses GET for images
-            headers: { 'Content-Type': 'application/json' },
-        })
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('Image not found');
-            }
-            return response.blob(); // Use .blob() to handle the binary image data
-        })
-        .then(imageBlob => {
-            const imageUrl = URL.createObjectURL(imageBlob); // Create a URL for the image blob
-            const botMessage = { text: imageUrl, sender: 'bot', isImage: true }; // Add `isImage`
-            setMessages(prev => [...prev, botMessage]);
-        })
-        .catch(error => console.error('Erro:', error));
-        setInputMessage('');
-        return;
-    }
-    
+      }
 
-      fetch('http://localhost:5228/api/Response/chat', {
+      // Verifica se o comando é "/image"
+      if (inputMessage.startsWith('/image')) {
+        const userInput = inputMessage.replace('/image', '').trim(); // Extrai o input do usuário após "/image"
+        if (userInput) {
+          fetch(`http://localhost:5228/api/Response/generate-image?prompt=${encodeURIComponent(userInput)}`)
+            .then(response => {
+              if (!response.ok) {
+                throw new Error('Erro na resposta da API de imagem');
+              }
+              return response.blob(); // Recebe a imagem como Blob
+            })
+            .then(imageBlob => {
+              const imageUrl = URL.createObjectURL(imageBlob); // Cria uma URL para exibir a imagem
+              const botMessage = { text: imageUrl, sender: 'bot', isImage: true };
+              setMessages(prev => [...prev, botMessage]);
+            })
+            .catch(error => {
+              console.error('Erro ao obter a imagem:', error);
+              const errorMessage = { text: 'Erro ao gerar a imagem.', sender: 'bot' };
+              setMessages(prev => [...prev, errorMessage]);
+            });
+        }
+        setInputMessage('');
+        return;
+      }
+
+      // Caso não seja um comando "/toggle" ou "/image", faz a chamada padrão para o bot
+      fetch('http://localhost:5228/api/Chat/ask', {
         method: 'POST',
         headers: {
-            'Content-Type': 'application/json',
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ text: inputMessage }), // Alterado para enviar um objeto
-    })
-    .then(response => {
-        if (!response.ok) {
+        body: JSON.stringify({ Question: inputMessage }),
+      })
+        .then(response => {
+          if (!response.ok) {
             throw new Error('Erro na resposta da API');
-        }
-        return response.json();
-    })
-    .then(data => {
-        const botMessage = { text: data.text || "Resposta não recebida.", sender: 'bot' };
-        setMessages(prev => [...prev, botMessage]);
-    })
-    .catch(error => {
-        console.error('Erro:', error);
-        const errorMessage = { text: 'Erro ao conectar com o bot.', sender: 'bot' };
-        setMessages(prev => [...prev, errorMessage]);
-    });
-    
-    
+          }
+          return response.json();
+        })
+        .then(data => {
+          const botResponse = data.candidates[0].content.parts[0].text || "Resposta não recebida.";
+          const botMessage = { text: botResponse, sender: 'bot' };
+          setMessages(prev => [...prev, botMessage]);
+        })
+        .catch(error => {
+          console.error('Erro:', error);
+          const errorMessage = { text: 'Erro ao conectar com o bot.', sender: 'bot' };
+          setMessages(prev => [...prev, errorMessage]);
+        });
 
       setInputMessage('');
     }
@@ -126,7 +89,11 @@ function App() {
       <div className="chatbot-messages">
         {messages.map((msg, index) => (
           <div key={index} className={`message ${msg.sender}`}>
-            {msg.isImage ? <img src={msg.text} alt="Generated" style={{ maxWidth: '100%' }} /> : msg.text}
+            {msg.isImage ? (
+              <img src={msg.text} alt="Generated" style={{ maxWidth: '100%' }} />
+            ) : (
+              msg.text
+            )}
           </div>
         ))}
         <div ref={messagesEndRef} />
