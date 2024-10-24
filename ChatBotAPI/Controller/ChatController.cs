@@ -5,87 +5,65 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using ChatBot.Data;
+using ChatBot.Models;
+using Microsoft.EntityFrameworkCore;  // Operações com o banco de dados
+using Microsoft.AspNetCore.Authorization; // Para autenticação e autorização
 
 [ApiController]
 [Route("api/[controller]")]
 public class ChatController : ControllerBase
 {
     private readonly HttpClient _httpClient;
-    private readonly string _apiKey = "";  // Substitua pela sua chave da API
+    private readonly ChatBotContext _context;
+    private readonly string _apiKey = "";  // Insira GEMINI API KEY
 
-    public ChatController(HttpClient httpClient)
+    public ChatController(HttpClient httpClient, ChatBotContext context)
     {
         _httpClient = httpClient;
+        _context = context;
     }
 
-    // [HttpPost("ask")]
-    // public async Task<IActionResult> AskQuestion([FromBody] UserRequest request)
-    // {
-    //     try
-    //     {
-    //         // Faz a chamada à API Gemini
-    //         var geminiResponse = await SendMessageToGeminiAsync(request.Question);
+        [HttpPost("InsertAsk")]
+        public async Task<ActionResult<Question>> PostQuestion([FromBody] Question question)
+        {
+            _context.Questions.Add(question);
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(PostQuestion), new { id = question.Id }, question);
+        }
 
-    //         // Log temporário para exibir o conteúdo bruto da resposta da API
-    //         Console.WriteLine("Resposta da API Gemini (bruta): " + geminiResponse);
-
-    //         // Processa a resposta da API Gemini
-    //         var responseObject = JsonSerializer.Deserialize<GeminiResponse>(geminiResponse);
-
-    //         // Verifica se a resposta contém dados válidos
-    //         if (responseObject?.Candidates != null && responseObject.Candidates.Any())
-    //         {
-    //             var answer = responseObject.Candidates.First().Content?.Parts?.FirstOrDefault()?.Text ?? "Nenhuma resposta foi gerada.";
-
-    //             // Extrai palavras-chave
-    //             var keywords = ExtractKeywords(answer);
-
-    //             // Retorna a resposta e palavras-chave
-    //             return Ok(new
-    //             {
-    //                 response = answer,
-    //                 keywords = keywords
-    //             });
-    //         }
-    //         else
-    //         {
-    //             // Log temporário para verificar o objeto deserializado
-    //             Console.WriteLine("Objeto deserializado da API Gemini: " + JsonSerializer.Serialize(responseObject));
-
-    //             return BadRequest(new { error = "Resposta inválida ou vazia da API Gemini." });
-    //         }
-    //     }
-    //     catch (HttpRequestException ex)
-    //     {
-    //         return BadRequest(new { error = ex.Message });
-    //     }
-    // }
+        [HttpPost("InsertAnswer")]
+        public async Task<ActionResult<Answer>> PostAnswer([FromBody] Answer answer)
+        {
+            _context.Answers.Add(answer);
+            await _context.SaveChangesAsync();
+            return CreatedAtAction(nameof(PostAnswer), new { id = answer.Id }, answer);
+        }
 
     [HttpPost("ask")]
-public async Task<IActionResult> AskQuestion([FromBody] UserRequest request)
-{
-    try
+    public async Task<IActionResult> AskQuestion([FromBody] UserRequest request)
     {
-        // Faz a chamada à API Gemini e recebe a resposta bruta
-        var geminiResponse = await SendMessageToGeminiAsync(request.Question);
+        try
+        {
+            // Call the Gemini API and get the raw response
+            var geminiResponse = await SendMessageToGeminiAsync(request.Question);
 
-        // Retorna a resposta da API Gemini diretamente
-        return Ok(geminiResponse);
+            // Return the response from the Gemini API directly
+            return Ok(geminiResponse);
+        }
+        catch (HttpRequestException ex)
+        {
+            // Return an error in case of a failure to call the API
+            return BadRequest(new { error = ex.Message });
+        }
     }
-    catch (HttpRequestException ex)
-    {
-        // Retorna um erro em caso de falha na chamada à API
-        return BadRequest(new { error = ex.Message });
-    }
-}
 
-
-    // Função para fazer a chamada à API Gemini
+    // Function to call the Gemini API
     private async Task<string> SendMessageToGeminiAsync(string userMessage)
     {
         var geminiEndpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + _apiKey;
 
-        // Configuração do request para a API Gemini
+        // Request configuration for the Gemini API
         var requestBody = new
         {
             contents = new[]
@@ -93,10 +71,7 @@ public async Task<IActionResult> AskQuestion([FromBody] UserRequest request)
                 new
                 {
                     role = "user",
-                    parts = new[]
-                    {
-                        new { text = "Responda a frase "+userMessage+" com no máximo 100 caracteres" }
-                    }
+                    parts = new[] { new { text = "Responda a frase " + userMessage + " com no máximo 300 caracteres" } }
                 }
             },
             generationConfig = new
@@ -112,55 +87,100 @@ public async Task<IActionResult> AskQuestion([FromBody] UserRequest request)
         var jsonRequest = JsonSerializer.Serialize(requestBody);
         var content = new StringContent(jsonRequest, Encoding.UTF8, "application/json");
 
-        // Faz a requisição POST para a API Gemini
+        // Make the POST request to the Gemini API
         var response = await _httpClient.PostAsync(geminiEndpoint, content);
         var responseBody = await response.Content.ReadAsStringAsync();
-
         if (response.IsSuccessStatusCode)
         {
-            return responseBody;  // Retorna a resposta do Gemini
+            return responseBody;  // Return the response from Gemini
         }
         else
         {
-            throw new HttpRequestException($"Erro ao chamar a API Gemini: {responseBody}");
+            throw new HttpRequestException($"Error calling the Gemini API: {responseBody}");
         }
     }
 
-    // Função simples para extrair palavras-chave (pode ser aprimorada)
-    private string[] ExtractKeywords(string answer)
+
+    //Get endpoints
+    // Endpoint para obter uma pergunta pelo ID como string
+    [HttpGet("questions/{id}")]
+    public async Task<ActionResult<string>> GetQuestionContentById(int id)
     {
-        var words = answer.Split(' ')
-                          .Where(word => word.Length > 4) // Pega palavras maiores que 4 letras
-                          .Take(2) // Limita para 2 palavras
-                          .ToArray();
-        return words;
+        var question = await _context.Questions.FindAsync(id);
+
+        if (question == null)
+        {
+            return NotFound(); // Retorna 404 se a pergunta não for encontrada
+        }
+
+        return Ok(question.Content); // Retorna o conteúdo da pergunta como string
     }
+
+    // Endpoint para obter uma resposta pelo ID como string
+    [HttpGet("answers/{id}")]
+    public async Task<ActionResult<string>> GetAnswerContentById(int id)
+    {
+        var answer = await _context.Answers.FindAsync(id);
+
+        if (answer == null)
+        {
+            return NotFound(); // Retorna 404 se a resposta não for encontrada
+        }
+
+        return Ok(answer.Content); // Retorna o conteúdo da resposta como string
+    }
+
 }
 
-// Classe para a requisição do usuário
+// Class for user request
 public class UserRequest
 {
+    public int Id { get; set; }
     public string? Question { get; set; }
 }
 
-// Modelo para a resposta do Gemini
-public class GeminiResponse
+// Class for saving answers
+public class AnswerRequest
 {
-    public List<Candidate> Candidates { get; set; }  // Ajustado para ser uma lista
+    public string? Answer { get; set; }
 }
 
+// Other model classes remain unchanged
+
+// Candidate.cs
 public class Candidate
 {
-    public Content? Content { get; set; }
+    public int Id { get; set; }
+    public string? Content { get; set; }
     public string? FinishReason { get; set; }
 }
 
-public class Content
+// Response.cs (Modelo fictício, caso precise)
+public class Response
 {
-    public List<Part>? Parts { get; set; }  // Adicionada a propriedade Parts como uma lista
+    public int Id { get; set; }
+    public string? Text { get; set; }
+    public DateTime CreatedAt { get; set; }
 }
 
-public class Part
+// Report.cs
+public class Report
 {
-    public string? Text { get; set; }
+    public int Id { get; set; }
+    public string? Message { get; set; }
+    public DateTime ReportedAt { get; set; }
+}
+
+// Variant.cs
+public class Variant
+{
+    public int Id { get; set; }
+    public string? Name { get; set; }
+}
+
+// User.cs
+public class User
+{
+    public int Id { get; set; }
+    public string? UserName { get; set; }
 }
